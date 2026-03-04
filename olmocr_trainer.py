@@ -282,8 +282,10 @@ training:
 class VLM:
     """Lazy-loaded local vision-language model."""
 
-    def __init__(self, model_name: str) -> None:
+    def __init__(self, model_name: str,
+                 processor_name: str = "Qwen/Qwen2.5-VL-7B-Instruct") -> None:
         self.model_name = model_name
+        self.processor_name = processor_name
         self.model = None
         self.processor = None
         self.loaded = False
@@ -292,12 +294,12 @@ class VLM:
         if self.loaded:
             return
         import torch
-        from transformers import AutoModelForVision2Seq, AutoProcessor
-        log(f"Loading processor: {self.model_name}")
-        self.processor = AutoProcessor.from_pretrained(self.model_name)
-        log("Loading model weights (first run downloads ~14 GB) …")
-        self.model = AutoModelForVision2Seq.from_pretrained(
-            self.model_name, torch_dtype=torch.bfloat16, device_map="auto"
+        from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+        log(f"Loading processor: {self.processor_name}")
+        self.processor = AutoProcessor.from_pretrained(self.processor_name)
+        log(f"Loading model weights: {self.model_name} (first run may download ~8 GB) …")
+        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            self.model_name, device_map="auto"
         ).eval()
         self.loaded = True
         log("VLM ready.")
@@ -419,9 +421,13 @@ class TrainerApp:
         ttk.Separator(parent, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=6)
 
-        ttk.Label(parent, text="VLM model:").pack(side=tk.LEFT)
-        self.model_var = StringVar(value="allenai/olmOCR-7B-0924-preview")
-        ttk.Entry(parent, textvariable=self.model_var, width=34).pack(
+        ttk.Label(parent, text="Model:").pack(side=tk.LEFT)
+        self.model_var = StringVar(value="allenai/olmOCR-2-7B-1025-FP8")
+        ttk.Entry(parent, textvariable=self.model_var, width=30).pack(
+            side=tk.LEFT, padx=4)
+        ttk.Label(parent, text="Processor:").pack(side=tk.LEFT)
+        self.processor_var = StringVar(value="Qwen/Qwen2.5-VL-7B-Instruct")
+        ttk.Entry(parent, textvariable=self.processor_var, width=26).pack(
             side=tk.LEFT, padx=4)
         ttk.Button(parent, text="Load VLM",
                    command=self._load_vlm).pack(side=tk.LEFT, padx=2)
@@ -787,7 +793,8 @@ class TrainerApp:
 
         def _load():
             try:
-                vlm = VLM(model_name)
+                vlm = VLM(model_name,
+                          processor_name=self.processor_var.get().strip())
                 vlm.load(self._log)
                 self.vlm = vlm
                 self.root.after(0, lambda: self.vlm_label.config(
