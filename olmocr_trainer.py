@@ -271,6 +271,8 @@ class TrainerApp:
     def _build_toolbar(self, parent):
         ttk.Button(parent, text="📂 Add PDFs",
                    command=self._add_pdfs).pack(side=tk.LEFT, padx=2)
+        ttk.Button(parent, text="📁 Add Folder",
+                   command=self._add_folder).pack(side=tk.LEFT, padx=2)
         ttk.Button(parent, text="🗑 Clear List",
                    command=self._clear_list).pack(side=tk.LEFT, padx=2)
 
@@ -428,6 +430,27 @@ class TrainerApp:
                 self.page_list.insert(END, label)
             self._log(f"Added {Path(path).name} ({n} pages)")
 
+        if self.pages and self.current_idx == -1:
+            self._select_page(0)
+
+    def _add_folder(self):
+        folder = filedialog.askdirectory(title="Select folder — all PDFs inside will be added")
+        if not folder:
+            return
+        pdf_paths = sorted(Path(folder).rglob("*.pdf"))
+        if not pdf_paths:
+            self._log(f"No PDFs found in {folder}")
+            return
+        self._log(f"Found {len(pdf_paths)} PDF(s) in {Path(folder).name} …")
+        for path in pdf_paths:
+            n = count_pages(str(path))
+            if n == 0:
+                self._log(f"  Could not read {path.name} — skipped")
+                continue
+            for pg in range(1, n + 1):
+                self.pages.append((str(path), pg))
+                self.page_list.insert(END, f"{path.stem}  p{pg}/{n}")
+            self._log(f"  Added {path.name} ({n} pages)")
         if self.pages and self.current_idx == -1:
             self._select_page(0)
 
