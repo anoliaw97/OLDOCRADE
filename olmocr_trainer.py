@@ -957,13 +957,11 @@ class TrainerApp:
                 split = self.page_splits[idx]
                 self._log(
                     f"[{idx + 1}/{total}] {Path(pdf_path).name} p{page_num} [{split}]")
-                self.root.after(0, self._select_page, idx)
 
                 try:
                     if self.vlm and self.vlm.loaded:
                         meta, body = self._run_vlm_on(idx)
                         self.root.after(0, self._fill_editors, meta, body)
-                        import time; time.sleep(0.05)  # let UI refresh
                     else:
                         meta, body = YAML_DEFAULTS.copy(), ""
 
