@@ -669,22 +669,35 @@ class TrainerApp:
         if not pdf_paths:
             self._log(f"No PDFs found in {folder}")
             return
-        self._log(f"Found {len(pdf_paths)} PDF(s) in {Path(folder).name} …")
-        for path in pdf_paths:
-            n = count_pages(str(path))
-            if n == 0:
-                self._log(f"  Could not read {path.name} — skipped")
-                continue
-            for pg in range(1, n + 1):
-                idx = len(self.pages)
-                self.pages.append((str(path), pg))
-                self.page_splits.append("train")
-                self.page_statuses.append("○")
-                label = f"{path.stem}  p{pg}/{n}"
-                self._tree_insert(idx, label, "train")
-            self._log(f"  Added {path.name} ({n} pages)")
-        if self.pages and self.current_idx == -1:
-            self._select_page(0)
+        self._log(f"Found {len(pdf_paths)} PDF(s) in {Path(folder).name} — scanning …")
+        self.status_var.set("Scanning PDFs …")
+
+        def _insert_results(results):
+            first_new = len(self.pages)
+            for path, n in results:
+                if n == 0:
+                    self._log_ui(f"  Could not read {path.name} — skipped")
+                    continue
+                for pg in range(1, n + 1):
+                    idx = len(self.pages)
+                    self.pages.append((str(path), pg))
+                    self.page_splits.append("train")
+                    self.page_statuses.append("○")
+                    self._tree_insert(idx, f"{path.stem}  p{pg}/{n}", "train")
+                self._log_ui(f"  Added {path.name} ({n} pages)")
+            if self.current_idx == -1 and self.pages:
+                self._select_page(first_new)
+            self.status_var.set(f"Ready — {len(self.pages)} pages total.")
+
+        def _worker():
+            results = []
+            for path in pdf_paths:
+                n = count_pages(str(path))
+                results.append((path, n))
+                self.root.after(0, self.status_var.set, f"Scanning {path.name} …")
+            self.root.after(0, _insert_results, results)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _clear_list(self):
         self.pages.clear()
