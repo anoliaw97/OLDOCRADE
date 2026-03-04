@@ -665,37 +665,52 @@ class TrainerApp:
             title="Select folder — all PDFs inside will be added")
         if not folder:
             return
-        pdf_paths = sorted(Path(folder).rglob("*.pdf"))
-        if not pdf_paths:
-            self._log(f"No PDFs found in {folder}")
-            return
-        self._log(f"Found {len(pdf_paths)} PDF(s) in {Path(folder).name} — scanning …")
-        self.status_var.set("Scanning PDFs …")
+        self.status_var.set("Scanning …")
 
-        def _insert_results(results):
-            first_new = len(self.pages)
-            for path, n in results:
-                if n == 0:
-                    self._log_ui(f"  Could not read {path.name} — skipped")
-                    continue
-                for pg in range(1, n + 1):
-                    idx = len(self.pages)
-                    self.pages.append((str(path), pg))
-                    self.page_splits.append("train")
-                    self.page_statuses.append("○")
-                    self._tree_insert(idx, f"{path.stem}  p{pg}/{n}", "train")
-                self._log_ui(f"  Added {path.name} ({n} pages)")
-            if self.current_idx == -1 and self.pages:
+        # first_new_box[0] is set on first successful insert so _finish can
+        # auto-select the first newly added page.
+        first_new_box = []
+
+        def _insert_one(path, n):
+            """Called on main thread once per PDF after count_pages returns."""
+            if n == 0:
+                self._log_ui(f"  Could not read {path.name} — skipped")
+                return
+            if not first_new_box:
+                first_new_box.append(len(self.pages))
+            for pg in range(1, n + 1):
+                idx = len(self.pages)
+                self.pages.append((str(path), pg))
+                self.page_splits.append("train")
+                self.page_statuses.append("○")
+                self._tree_insert(idx, f"{path.stem}  p{pg}/{n}", "train")
+            self._log_ui(f"  Added {path.name} ({n} pages)")
+
+        def _finish():
+            first_new = first_new_box[0] if first_new_box else None
+            if self.current_idx == -1 and first_new is not None:
                 self._select_page(first_new)
             self.status_var.set(f"Ready — {len(self.pages)} pages total.")
 
         def _worker():
-            results = []
+            # rglob runs in background so the main thread never blocks on I/O
+            pdf_paths = sorted(Path(folder).rglob("*.pdf"))
+            if not pdf_paths:
+                self.root.after(0, self._log_ui,
+                                f"No PDFs found in {Path(folder).name}")
+                self.root.after(0, self.status_var.set, "Ready.")
+                return
+            self.root.after(0, self._log_ui,
+                            f"Found {len(pdf_paths)} PDF(s) in "
+                            f"{Path(folder).name} — scanning …")
             for path in pdf_paths:
+                # show which file is being counted *before* the blocking call
+                self.root.after(0, self.status_var.set,
+                                f"Scanning {path.name} …")
                 n = count_pages(str(path))
-                results.append((path, n))
-                self.root.after(0, self.status_var.set, f"Scanning {path.name} …")
-            self.root.after(0, _insert_results, results)
+                # drip-feed inserts: one PDF worth of rows per after() call
+                self.root.after(0, _insert_one, path, n)
+            self.root.after(0, _finish)
 
         threading.Thread(target=_worker, daemon=True).start()
 
