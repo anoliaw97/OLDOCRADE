@@ -667,17 +667,10 @@ class TrainerApp:
             return
         self.status_var.set("Scanning …")
 
-        # first_new_box[0] is set on first successful insert so _finish can
-        # auto-select the first newly added page.
-        first_new_box = []
-
         def _insert_one(path, n):
-            """Called on main thread once per PDF after count_pages returns."""
             if n == 0:
                 self._log_ui(f"  Could not read {path.name} — skipped")
                 return
-            if not first_new_box:
-                first_new_box.append(len(self.pages))
             for pg in range(1, n + 1):
                 idx = len(self.pages)
                 self.pages.append((str(path), pg))
@@ -686,14 +679,22 @@ class TrainerApp:
                 self._tree_insert(idx, f"{path.stem}  p{pg}/{n}", "train")
             self._log_ui(f"  Added {path.name} ({n} pages)")
 
-        def _finish():
-            first_new = first_new_box[0] if first_new_box else None
-            if self.current_idx == -1 and first_new is not None:
-                self._select_page(first_new)
-            self.status_var.set(f"Ready — {len(self.pages)} pages total.")
+        def _drain(it):
+            """Process one PDF per call; reschedule self so the event loop
+            can handle user input between each PDF's tree inserts."""
+            try:
+                path, n = next(it)
+            except StopIteration:
+                # All PDFs inserted — update status, no auto-preview.
+                self.status_var.set(
+                    f"Ready — {len(self.pages)} pages total. "
+                    "Click a page to preview.")
+                self._log_ui("Folder loaded.")
+                return
+            _insert_one(path, n)
+            self.root.after(0, _drain, it)   # yield to event loop, then next
 
         def _worker():
-            # rglob runs in background so the main thread never blocks on I/O
             pdf_paths = sorted(Path(folder).rglob("*.pdf"))
             if not pdf_paths:
                 self.root.after(0, self._log_ui,
@@ -703,14 +704,14 @@ class TrainerApp:
             self.root.after(0, self._log_ui,
                             f"Found {len(pdf_paths)} PDF(s) in "
                             f"{Path(folder).name} — scanning …")
+            results = []
             for path in pdf_paths:
-                # show which file is being counted *before* the blocking call
                 self.root.after(0, self.status_var.set,
                                 f"Scanning {path.name} …")
                 n = count_pages(str(path))
-                # drip-feed inserts: one PDF worth of rows per after() call
-                self.root.after(0, _insert_one, path, n)
-            self.root.after(0, _finish)
+                results.append((path, n))
+            # Hand off to the main-thread drain chain (single after call)
+            self.root.after(0, _drain, iter(results))
 
         threading.Thread(target=_worker, daemon=True).start()
 
