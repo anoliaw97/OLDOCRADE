@@ -49,9 +49,19 @@ Repository = "https://github.com/allenai/olmocr"
 Changelog = "https://github.com/allenai/olmocr/blob/main/CHANGELOG.md"
 # Documentation = "https://olmocr.readthedocs.io/"
 
+[project.scripts]
+olmocr-finetune-gui = "olmocr.finetune_gui.app:main"
+
 [project.optional-dependencies]
 gpu = [
     "vllm==0.11.2"
+]
+
+finetune_gui = [
+    "gradio>=4.0",
+    "pypdf>=5.2.0",
+    "Pillow",
+    "pandas",
 ]
 
 dev = [
