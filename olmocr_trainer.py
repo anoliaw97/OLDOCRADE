@@ -955,6 +955,17 @@ class TrainerApp:
 
                 pdf_path, page_num = self.pages[idx]
                 split = self.page_splits[idx]
+
+                # Resume support: skip pages whose output files already exist
+                stem = f"{Path(pdf_path).stem}_page{page_num}"
+                split_dir = Path(out) / split
+                if (split_dir / f"{stem}.md").exists() and \
+                        (split_dir / f"{stem}.pdf").exists():
+                    self._log(f"[{idx + 1}/{total}] skipped (already extracted)")
+                    self.root.after(0, self._mark_done_ui, idx)
+                    self.root.after(0, self.progress.configure, {"value": idx + 1})
+                    continue
+
                 self._log(
                     f"[{idx + 1}/{total}] {Path(pdf_path).name} p{page_num} [{split}]")
 
