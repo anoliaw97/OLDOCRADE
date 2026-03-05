@@ -956,11 +956,25 @@ class TrainerApp:
                 pdf_path, page_num = self.pages[idx]
                 split = self.page_splits[idx]
 
-                # Resume support: skip pages whose output files already exist
-                stem = f"{Path(pdf_path).stem}_page{page_num}"
+                # Resume support: count extracted .md files for this PDF and
+                # compare to total page count instead of checking individual files
+                pdf_stem  = Path(pdf_path).stem
                 split_dir = Path(out) / split
-                if (split_dir / f"{stem}.md").exists() and \
-                        (split_dir / f"{stem}.pdf").exists():
+                total_pdf_pages = max(
+                    pn for pp, pn in self.pages if pp == pdf_path
+                )
+                extracted_count = len(list(split_dir.glob(
+                    f"{pdf_stem}_page*.md"
+                )))
+                if extracted_count >= total_pdf_pages:
+                    self._log(
+                        f"[{idx + 1}/{total}] skipped"
+                        f" (complete: {extracted_count}/{total_pdf_pages})"
+                    )
+                    self.root.after(0, self._mark_done_ui, idx)
+                    self.root.after(0, self.progress.configure, {"value": idx + 1})
+                    continue
+                elif page_num <= extracted_count:
                     self._log(f"[{idx + 1}/{total}] skipped (already extracted)")
                     self.root.after(0, self._mark_done_ui, idx)
                     self.root.after(0, self.progress.configure, {"value": idx + 1})
